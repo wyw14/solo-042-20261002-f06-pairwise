@@ -151,7 +151,7 @@ func (c *Coordinator) List() []model.FillSession {
 
 func (c *Coordinator) selectCircuit() (circuit.Circuit, error) {
 	for _, candidate := range c.circuitList.List() {
-		if !candidate.Enabled {
+		if !candidate.Enabled || candidate.Maintenance != nil {
 			continue
 		}
 		if _, occupied := c.circuits.Get(candidate.ID); !occupied {

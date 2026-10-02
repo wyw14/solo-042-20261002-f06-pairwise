@@ -3,23 +3,25 @@ package circuit
 import "time"
 
 type Health struct {
-	CircuitID string    `json:"circuit_id"`
-	Available bool      `json:"available"`
-	Reason    string    `json:"reason,omitempty"`
-	CheckedAt time.Time `json:"checked_at"`
+	CircuitID   string       `json:"circuit_id"`
+	Available   bool         `json:"available"`
+	Reason      string       `json:"reason,omitempty"`
+	Maintenance *Maintenance `json:"maintenance,omitempty"`
+	CheckedAt   time.Time    `json:"checked_at"`
 }
 
 type HealthService struct {
-	registry *Registry
-	manager  *Manager
-	now      func() time.Time
+	registry    *Registry
+	manager     *Manager
+	maintenance *MaintenanceService
+	now         func() time.Time
 }
 
-func NewHealthService(registry *Registry, manager *Manager, now func() time.Time) *HealthService {
+func NewHealthService(registry *Registry, manager *Manager, maintenance *MaintenanceService, now func() time.Time) *HealthService {
 	if now == nil {
 		now = time.Now
 	}
-	return &HealthService{registry: registry, manager: manager, now: now}
+	return &HealthService{registry: registry, manager: manager, maintenance: maintenance, now: now}
 }
 
 func (s *HealthService) Check(id string) Health {
@@ -27,6 +29,18 @@ func (s *HealthService) Check(id string) Health {
 	circuit, ok := s.registry.Get(id)
 	if !ok {
 		result.Reason = "circuit is not configured"
+		return result
+	}
+	if circuit.Maintenance != nil {
+		result.Maintenance = circuit.Maintenance
+		if isolated, blocker := s.maintenance.Isolation(id); isolated {
+			result.Reason = "circuit is under maintenance (isolated)"
+		} else {
+			result.Reason = "circuit is under maintenance: " + blocker
+		}
+		if rejection := circuit.Maintenance.LastRejection; rejection != nil {
+			result.Reason += "; last " + rejection.Operation + " rejected: " + rejection.Reason
+		}
 		return result
 	}
 	if !circuit.Enabled {

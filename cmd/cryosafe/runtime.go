@@ -135,13 +135,12 @@ func buildRuntime(cfg config, now func() time.Time) (*runtime, error) {
 		circuit.Circuit{ID: "C-B", Zone: "south", ValveID: "VALVE-B", Enabled: true},
 	)
 	circuitManager := circuit.NewManager("C-A", "C-B")
-	if err := circuitRegistry.UpdatePressure("C-A", 121.0); err != nil {
+	if err := circuitRegistry.RecordPressure("C-A", 121.0, now()); err != nil {
 		return nil, err
 	}
 	if err := circuitRegistry.SetEnabled("C-B", true); err != nil {
 		return nil, err
 	}
-	circuitHealth := circuit.NewHealthService(circuitRegistry, circuitManager, now)
 	transport := valve.NewMemoryTransport(now)
 	valveController, err := valve.NewController(transport, now)
 	if err != nil {
@@ -149,6 +148,12 @@ func buildRuntime(cfg config, now func() time.Time) (*runtime, error) {
 	}
 	commandService := valve.NewCommandService(valveController, now)
 	routeService := valve.NewRouteService(commandService)
+	circuitMaintenance, err := circuit.NewMaintenanceService(circuitRegistry, circuitManager, routeService, circuit.DefaultRestorePolicy(), now)
+	if err != nil {
+		return nil, err
+	}
+	circuitManager.SetReservationGuard(circuitMaintenance.Guard)
+	circuitHealth := circuit.NewHealthService(circuitRegistry, circuitManager, circuitMaintenance, now)
 	fillCoordinator := fill.NewCoordinator(circuitManager, circuitRegistry, routeService, vesselState, now)
 	retryService, err := fill.NewRetryService(commandService, fill.RetryPolicy{Attempts: 3, Delay: 100 * time.Millisecond})
 	if err != nil {
@@ -194,18 +199,20 @@ func buildRuntime(cfg config, now func() time.Time) (*runtime, error) {
 	healthService := monitor.NewHealthService(ingestor, circuitHealth, probeMonitor, now)
 
 	apiServer := api.NewServer(api.Dependencies{
-		Vessels:        vesselRegistry,
-		Fills:          fillService,
-		Alarms:         alarmService,
-		Probes:         probeRegistry,
-		ProbeLifecycle: probeLifecycle,
-		Transfers:      transferService,
-		Telemetry:      ingestor,
-		Receiver:       receiver,
-		Health:         healthService,
-		ProbeMonitor:   probeMonitor,
-		Suppressions:   suppressions,
-		Now:            now,
+		Vessels:            vesselRegistry,
+		Fills:              fillService,
+		Alarms:             alarmService,
+		Probes:             probeRegistry,
+		ProbeLifecycle:     probeLifecycle,
+		Transfers:          transferService,
+		Telemetry:          ingestor,
+		Receiver:           receiver,
+		Health:             healthService,
+		ProbeMonitor:       probeMonitor,
+		Suppressions:       suppressions,
+		Circuits:           circuitRegistry,
+		CircuitMaintenance: circuitMaintenance,
+		Now:                now,
 	})
 	server := &http.Server{
 		Addr:              cfg.Address,

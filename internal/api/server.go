@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/wyw14/cry-98/internal/alarm"
+	"github.com/wyw14/cry-98/internal/circuit"
 	"github.com/wyw14/cry-98/internal/fill"
 	"github.com/wyw14/cry-98/internal/monitor"
 	"github.com/wyw14/cry-98/internal/probe"
@@ -15,18 +16,20 @@ import (
 )
 
 type Dependencies struct {
-	Vessels        *vessel.Registry
-	Fills          *fill.Service
-	Alarms         *alarm.Service
-	Probes         *probe.Registry
-	ProbeLifecycle *probe.Lifecycle
-	Transfers      *transfer.Service
-	Telemetry      *telemetry.Ingestor
-	Receiver       *telemetry.Receiver
-	Health         *monitor.HealthService
-	ProbeMonitor   *monitor.ProbeMonitor
-	Suppressions   *alarm.SuppressionService
-	Now            func() time.Time
+	Vessels            *vessel.Registry
+	Fills              *fill.Service
+	Alarms             *alarm.Service
+	Probes             *probe.Registry
+	ProbeLifecycle     *probe.Lifecycle
+	Transfers          *transfer.Service
+	Telemetry          *telemetry.Ingestor
+	Receiver           *telemetry.Receiver
+	Health             *monitor.HealthService
+	ProbeMonitor       *monitor.ProbeMonitor
+	Suppressions       *alarm.SuppressionService
+	Circuits           *circuit.Registry
+	CircuitMaintenance *circuit.MaintenanceService
+	Now                func() time.Time
 }
 
 type Server struct {
@@ -61,6 +64,11 @@ func (s *Server) routes() chi.Router {
 		api.Post("/fill-sessions/{id}/complete", s.completeFill)
 		api.Post("/fill-sessions/{id}/abort", s.abortFill)
 		api.Post("/fill-sessions/{id}/recover-isolation", s.recoverFillIsolation)
+		api.Get("/circuits", s.listCircuits)
+		api.Get("/circuits/{id}/maintenance", s.getCircuitMaintenance)
+		api.Post("/circuits/{id}/maintenance/deactivate", s.deactivateCircuit)
+		api.Post("/circuits/{id}/maintenance/restore", s.restoreCircuit)
+		api.Post("/circuits/{id}/pressure", s.recordCircuitPressure)
 		api.Get("/alarms", s.listAlarms)
 		api.Post("/alarms", s.raiseAlarm)
 		api.Post("/alarms/{id}/acknowledge", s.acknowledgeAlarm)

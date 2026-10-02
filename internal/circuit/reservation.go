@@ -26,6 +26,7 @@ type Manager struct {
 	mu           sync.Mutex
 	reservations map[string]Reservation
 	generations  map[string]uint64
+	guard        func(circuitID string) error
 }
 
 func NewManager(circuitIDs ...string) *Manager {
@@ -41,12 +42,26 @@ func NewManager(circuitIDs ...string) *Manager {
 	return m
 }
 
+// SetReservationGuard installs a check that runs inside the reservation
+// critical section, so a circuit cannot be reserved once the guard starts
+// rejecting it (e.g. after a maintenance deactivation).
+func (m *Manager) SetReservationGuard(guard func(circuitID string) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.guard = guard
+}
+
 func (m *Manager) Reserve(circuitID, vesselID string, sessionID uuid.UUID, now time.Time) (Reservation, error) {
 	if circuitID == "" || vesselID == "" || sessionID == uuid.Nil {
 		return Reservation{}, errors.New("invalid circuit reservation")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.guard != nil {
+		if err := m.guard(circuitID); err != nil {
+			return Reservation{}, err
+		}
+	}
 	if _, occupied := m.reservations[circuitID]; occupied {
 		return Reservation{}, ErrCircuitBusy
 	}

@@ -53,6 +53,19 @@ func (s *RouteService) TrackOpen(route Route) error {
 	return nil
 }
 
+// CircuitRouteOpen reports whether any tracked route still has an open
+// valve on the given circuit.
+func (s *RouteService) CircuitRouteOpen(circuitID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, route := range s.open {
+		if route.CircuitID == circuitID {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *RouteService) Close(ctx context.Context, sessionID uuid.UUID) error {
 	s.mu.Lock()
 	route, ok := s.open[sessionID]
