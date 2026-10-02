@@ -26,12 +26,14 @@ type Manager struct {
 	mu           sync.Mutex
 	reservations map[string]Reservation
 	generations  map[string]uint64
+	blocked      map[string]bool
 }
 
 func NewManager(circuitIDs ...string) *Manager {
 	m := &Manager{
 		reservations: make(map[string]Reservation),
 		generations:  make(map[string]uint64),
+		blocked:      make(map[string]bool),
 	}
 	for _, id := range circuitIDs {
 		if id != "" {
@@ -41,12 +43,38 @@ func NewManager(circuitIDs ...string) *Manager {
 	return m
 }
 
+// Block refuses all new reservations for the circuit until Unblock is called.
+// Existing reservations are left in place so an in-progress refill completes
+// or fails through the normal isolation path.
+func (m *Manager) Block(circuitID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.blocked[circuitID] = true
+}
+
+// Unblock allows new reservations for the circuit again.
+func (m *Manager) Unblock(circuitID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.blocked, circuitID)
+}
+
+// IsBlocked reports whether new reservations are refused for the circuit.
+func (m *Manager) IsBlocked(circuitID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.blocked[circuitID]
+}
+
 func (m *Manager) Reserve(circuitID, vesselID string, sessionID uuid.UUID, now time.Time) (Reservation, error) {
 	if circuitID == "" || vesselID == "" || sessionID == uuid.Nil {
 		return Reservation{}, errors.New("invalid circuit reservation")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.blocked[circuitID] {
+		return Reservation{}, ErrMaintenanceDeactivated
+	}
 	if _, occupied := m.reservations[circuitID]; occupied {
 		return Reservation{}, ErrCircuitBusy
 	}

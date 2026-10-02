@@ -74,3 +74,15 @@ func (s *RouteService) Close(ctx context.Context, sessionID uuid.UUID) error {
 	s.mu.Unlock()
 	return nil
 }
+
+// IsOpen reports whether a route for the session is currently tracked as open.
+func (s *RouteService) IsOpen(sessionID string) bool {
+	id, err := uuid.Parse(sessionID)
+	if err != nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.open[id]
+	return ok
+}

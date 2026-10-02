@@ -150,15 +150,49 @@ func (c *Coordinator) List() []model.FillSession {
 }
 
 func (c *Coordinator) selectCircuit() (circuit.Circuit, error) {
+	maintenance := false
 	for _, candidate := range c.circuitList.List() {
 		if !candidate.Enabled {
+			continue
+		}
+		if c.circuits.IsBlocked(candidate.ID) {
+			maintenance = true
 			continue
 		}
 		if _, occupied := c.circuits.Get(candidate.ID); !occupied {
 			return candidate, nil
 		}
 	}
+	if maintenance {
+		return circuit.Circuit{}, circuit.ErrMaintenanceDeactivated
+	}
 	return circuit.Circuit{}, circuit.ErrCircuitBusy
+}
+
+// IsSessionActive reports whether the fill session exists and has not reached
+// a terminal state. It backs the maintenance isolation checks.
+func (c *Coordinator) IsSessionActive(sessionID string) bool {
+	id, err := uuid.Parse(sessionID)
+	if err != nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	session, ok := c.sessions[id]
+	return ok && session.Active()
+}
+
+// ActiveCircuitSession returns the session id of the active fill bound to a
+// circuit, if any.
+func (c *Coordinator) ActiveCircuitSession(circuitID string) (uuid.UUID, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, session := range c.sessions {
+		if session.CircuitID == circuitID && session.Active() {
+			return session.ID, true
+		}
+	}
+	return uuid.Nil, false
 }
 
 func (c *Coordinator) finishState(session model.FillSession) {

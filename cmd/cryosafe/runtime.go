@@ -141,7 +141,6 @@ func buildRuntime(cfg config, now func() time.Time) (*runtime, error) {
 	if err := circuitRegistry.SetEnabled("C-B", true); err != nil {
 		return nil, err
 	}
-	circuitHealth := circuit.NewHealthService(circuitRegistry, circuitManager, now)
 	transport := valve.NewMemoryTransport(now)
 	valveController, err := valve.NewController(transport, now)
 	if err != nil {
@@ -155,6 +154,17 @@ func buildRuntime(cfg config, now func() time.Time) (*runtime, error) {
 		return nil, err
 	}
 	fillCoordinator.SetRetryService(retryService)
+	maintenanceService, err := circuit.NewMaintenanceService(
+		circuitRegistry,
+		circuitManager,
+		now,
+		circuit.WithFillInspector(fillCoordinator),
+		circuit.WithOpenValveChecker(routeService),
+	)
+	if err != nil {
+		return nil, err
+	}
+	circuitHealth := circuit.NewHealthService(circuitRegistry, circuitManager, maintenanceService, now)
 	completion := fill.NewCompletionService(fillCoordinator, pressureMonitor, store, now)
 	aborts := fill.NewAbortService(fillCoordinator, now)
 	fillService, err := fill.NewService(fillCoordinator, completion, aborts, 2.1)
@@ -205,6 +215,8 @@ func buildRuntime(cfg config, now func() time.Time) (*runtime, error) {
 		Health:         healthService,
 		ProbeMonitor:   probeMonitor,
 		Suppressions:   suppressions,
+		Circuits:       circuitRegistry,
+		Maintenance:    maintenanceService,
 		Now:            now,
 	})
 	server := &http.Server{

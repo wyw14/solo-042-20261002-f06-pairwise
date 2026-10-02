@@ -41,7 +41,10 @@ func (s *HealthService) Report() HealthReport {
 		report.Status = "degraded"
 	}
 	for _, health := range report.Circuits {
-		if !health.Available && health.Reason != "circuit is reserved" {
+		// A reserved circuit is busy with a normal refill and a circuit in
+		// settled maintenance is intentionally out of service; anything else
+		// unavailable (fault, pending isolation, disabled) is degradation.
+		if !health.Available && health.State != "reserved" && health.State != "maintenance" {
 			report.Status = "degraded"
 		}
 	}

@@ -4,7 +4,10 @@ import (
 	"errors"
 	"sort"
 	"sync"
+	"time"
 )
+
+var ErrCircuitNotFound = errors.New("circuit not found")
 
 type Circuit struct {
 	ID       string  `json:"id"`
@@ -12,6 +15,9 @@ type Circuit struct {
 	ValveID  string  `json:"valve_id"`
 	Enabled  bool    `json:"enabled"`
 	Pressure float64 `json:"pressure_kpa"`
+	// PressureRecordedAt is zero until the first pressure reading is
+	// recorded through RecordPressure.
+	PressureRecordedAt time.Time `json:"pressure_recorded_at,omitempty"`
 }
 
 type Registry struct {
@@ -47,16 +53,29 @@ func (r *Registry) List() []Circuit {
 	return result
 }
 
-func (r *Registry) UpdatePressure(id string, pressure float64) error {
+// RecordPressure registers a pressure reading for the circuit. Readings are
+// accepted both in and out of service: a deactivated circuit must be able to
+// report that pressure has bled down before restore is allowed.
+func (r *Registry) RecordPressure(id string, pressure float64, observedAt time.Time) (Circuit, error) {
+	if pressure < 0 {
+		return Circuit{}, errors.New("pressure reading cannot be negative")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	circuit, ok := r.circuits[id]
 	if !ok {
-		return errors.New("circuit not found")
+		return Circuit{}, ErrCircuitNotFound
 	}
 	circuit.Pressure = pressure
+	circuit.PressureRecordedAt = observedAt.UTC()
 	r.circuits[id] = circuit
-	return nil
+	return circuit, nil
+}
+
+// UpdatePressure keeps compatibility with callers that only have the reading.
+func (r *Registry) UpdatePressure(id string, pressure float64) error {
+	_, err := r.RecordPressure(id, pressure, time.Time{})
+	return err
 }
 
 func (r *Registry) SetEnabled(id string, enabled bool) error {
@@ -64,7 +83,7 @@ func (r *Registry) SetEnabled(id string, enabled bool) error {
 	defer r.mu.Unlock()
 	circuit, ok := r.circuits[id]
 	if !ok {
-		return errors.New("circuit not found")
+		return ErrCircuitNotFound
 	}
 	circuit.Enabled = enabled
 	r.circuits[id] = circuit

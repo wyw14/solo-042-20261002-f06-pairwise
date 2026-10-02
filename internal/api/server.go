@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/wyw14/cry-98/internal/alarm"
+	"github.com/wyw14/cry-98/internal/circuit"
 	"github.com/wyw14/cry-98/internal/fill"
 	"github.com/wyw14/cry-98/internal/monitor"
 	"github.com/wyw14/cry-98/internal/probe"
@@ -26,6 +27,8 @@ type Dependencies struct {
 	Health         *monitor.HealthService
 	ProbeMonitor   *monitor.ProbeMonitor
 	Suppressions   *alarm.SuppressionService
+	Circuits       *circuit.Registry
+	Maintenance    *circuit.MaintenanceService
 	Now            func() time.Time
 }
 
@@ -69,6 +72,10 @@ func (s *Server) routes() chi.Router {
 		api.Get("/probes", s.listProbes)
 		api.Post("/probes/{id}/samples", s.publishProbeSample)
 		api.Post("/probes/{id}/rebind", s.rebindProbe)
+		api.Get("/circuits", s.listCircuits)
+		api.Post("/circuits/{id}/pressure", s.recordCircuitPressure)
+		api.Post("/circuits/{id}/deactivate", s.deactivateCircuit)
+		api.Post("/circuits/{id}/restore", s.restoreCircuit)
 	})
 	return router
 }
